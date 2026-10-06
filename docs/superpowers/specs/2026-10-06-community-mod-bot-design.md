@@ -80,17 +80,24 @@ Makefile              # test / lint / typecheck / dev / seed
 - При добавлении в существующий чат бот делает первичный запрос `getChat` → `member_count`
   (события `chat_member` для уже сидящих участников Telegram не присылает) и сохраняет
   в `Chat.member_count`.
+- **Abuse protection**: максимум **10 чатов на одного Moderator** (user_id). Проверка при
+  `chat_member` (бот добавлен в чат) — при превышении бот покидает чат с объяснением.
+- **Удаление бота из чата**: `left_chat_member` (бот удалён) → `Chat.archived=True` без
+  удаления данных (статистика и настройки сохраняются). При повторном добавлении —
+  восстановление (archived=True→False) с сохранением конфигурации.
 
 ### Модели БД (ядро)
 
-- `Chat` — chat_id, настройки `jsonb`, `plan`, `member_count`, `branding_flag`.
+- `Chat` — chat_id, настройки `jsonb`, `plan`, `member_count`, `branding_flag`,
+  `archived` (бот удалён из чата).
 - `Moderator` — админы, подключившие/управляющие ботом (chat_id ↔ user_id).
 - `Member` — участник в чате: user_id, warn_count, joined_at, left_at.
 - `MessageLog` — лог срабатываний фильтров: user_id, тип фильтра, результат, время.
   Текст сообщения не храним (меньше персональных данных и объёма).
 - `ChatMemberEvents` — события enter/leave для статистики.
 - `DailyStats` — агрегаты по дням на чат.
-- `CaptchaChallenge` — активные капча-задачи (chat, user, expires_at).
+- `CaptchaChallenge` — активные капча-задачи (chat, user, `status`: pending/done/expired,
+  `expires_at`).
 - `ScheduledTask` — задачи автопостинга: cron, текст, chat_id.
 - `PaidPlan` — платежи/подписки: chat_id, plan, starts_at, expires_at.
 - `ErrorLog` — залогированные исключения.
@@ -98,9 +105,10 @@ Makefile              # test / lint / typecheck / dev / seed
 ### Масштабирование БД
 
 - **Партиционирование**: `MessageLog` и `ChatMemberEvents` — партиционирование по месяцам
-  (`RANGE (created_at)`, `declarative`-партиции в SQLAlchemy/Alembic + автосоздание новых
-  партиций на старте worker'а). Без этого агрегации статистики убьют производительность
-  через полгода.
+  (`RANGE (created_at)`). Новые партиции создаёт **worker** (APScheduler-джоба раз в месяц,
+  SQL `CREATE TABLE ... PARTITION OF`), а не сторонние расширения типа `pg_partman` — это
+  работает на любом Postgres-хостинге без прав суперпользователя. Миграции Alembic
+  создают родительские таблицы и партиции текущего месяца.
 - **Индексы** (составные, обязательные):
   - `MessageLog(chat_id, created_at)`;
   - `Member(chat_id, user_id)`;
@@ -139,11 +147,15 @@ Makefile              # test / lint / typecheck / dev / seed
 1. `chat_member` (`new_chat_member`) → сразу `restrict_chat_member`: запрет на отправку
    сообщений (и других прав) для новичка.
 2. Бот постит сообщение с inline-кнопкой «👤 Я человек»; создаётся `CaptchaChallenge`
-   (chat, user, `expires_at`).
-3. `callback_query` по кнопке → удаляем challenge, `restrict_chat_member` возвращает
-   права новичка.
-4. По истечении `expires_at` (отслеживает worker по Redis-состоянию + БД) — `restrict`
-   навсегда/на время (параметр чата) либо `ban`.
+   (chat, user, `status=pending`, `expires_at`).
+3. `callback_query` по кнопке → **идемпотентность**: `status==pending` → меняем на `done`
+   атомарно (CAS/UPDATE ... WHERE status='pending'); повторные нажатия игнорируются и не
+   дают второй раз вызвать `restrict_chat_member`. Затем возврат прав **с явным набором
+   permissions** (`can_send_messages=True`, `can_send_media_messages`, `can_send_other_messages`,
+   `can_add_web_page_previews`, insights) — если вернуть права без списка прав, юзер останется
+   mute навсегда.
+4. По истечении `expires_at` (отслеживает worker по Redis-состоянию + БД) — `status=expired`,
+   `restrict` навсегда/на время (параметр чата) либо `ban`.
 
 Решение капчи фиксируется **только** по callback — ждать произвольных сообщений новичка
 недостаточно, он обязан нажать кнопку.
@@ -179,10 +191,11 @@ Makefile              # test / lint / typecheck / dev / seed
 - Команда «Апгрейд» → `sendInvoice` (Telegram Stars).
 - `pre_checkout_query` → подтверждение; `successful_payment` → `Chat.plan=pro`,
   запись `PaidPlan` c `expires_at`.
-- **Renewal-механика (важно): Telegram Stars НЕ поддерживает автопродление.** За 3 дня
-  до `expires_at` worker шлёт админу инвойс с кнопкой «Продлить Pro»; при неоплате к
-  `expires_at` тариф понижается до free. Рекуррентного списания нет — продление всегда
-  явным действием пользователя.
+- **Renewal-механика (важно): Telegram Stars НЕ поддерживает автопродление.** Реминдеры
+  об оплате шлются за 7 / 3 / 1 день и в день истечения — инвойс с кнопкой «Продлить Pro».
+- **Grace period**: после `expires_at` дает 24 часа без отключения, после чего — `downgrade`
+  до free + уведомление админу. Рекуррентного списания нет — продление всегда явным
+  действием пользователя.
 - Контроль лимитов: при `ChatMembersUpdated` пересчитываем `member_count`; превышение 1000
   на `free` → выключаем расширенный функционал и шлём админу напоминание.
 
@@ -198,23 +211,36 @@ Makefile              # test / lint / typecheck / dev / seed
 
 ### Rate limits / Flood control
 
-- **Исходящие**: глобальный rate-limiter на все отправки в Telegram (aiogram
-  throttling middleware поверх Redis-счётчиков на `(chat_id, method)` + глобальный
-  бюджет). При массовом входе (например, реклама канала — 1000 приветствий разом) запросы
-  ставятся в очередь и уходят по таймингу, а не вбрасываются пачкой → иначе 429 и риск
-  бана токена.
+Многоуровневая система троттлинга исходящих по реальным лимитам Telegram API:
+
+- **Уровень 1 — глобальный**: ~30 msg/sec на весь бот (Redis-счётчик, общий `key`).
+- **Уровень 2 — per-chat**: 20 msg/min и 1 msg/sec на чат (`key = chat_id`).
+- **Уровень 3 — per-group broadcast**: 1 msg/min для широковещательных рассылок
+  (приветствия, капча, автопостинг) — отдельный счётчик на `(chat_id, broadcast)`.
+
+Все счётчики — в Redis (слайдинг-окно/токен-бакет), запросы сверх бюджета ставятся
+в очередь и уходят по таймингу, а не вбрасываются пачкой (иначе при рекламе канала —
+1000 приветствий разом — ловим 429 и риск бана токена). `429 Too Many Requests`
+обрабатывается централизованно: `retry_after` из ответа, backoff, пере-постановка в очередь.
+
 - **Входящие**: троттлинг хендлеров (лимиты на сообщения пользователя/чата), чтобы
   антиспам-логика не разрасталась в DoS-бомбардировку.
-- `429 Too Many Requests` обрабатывается централизованно: `retry_after` из ответа,
-  backoff, очередь.
 
 ### Фоновый процесс (worker)
 
 - **APScheduler** (не голый `asyncio.sleep` — ненадёжно при рестартах): AsyncIOScheduler,
   JobStore с хранением состояния джобов в БД/Redis, чтобы расписания переживали рестарты.
 - Задачи: шедулер автопостинга, агрегация статистики в `DailyStats` (ежечасно),
-  таймауты капча-задач, renewal-уведомления за 3 дня до `expires_at`, автосоздание
-  партиций на новый месяц.
+  таймауты капча-задач, renewal-реминдеры (за 7/3/1 день и в день истечения) и grace-period
+  downgrade, создание партиций на следующий месяц.
+
+### Мониторинг и healthchecks
+
+- `/health` endpoint (для Docker healthcheck): живость процесса + проверка соединения с БД/Redis.
+- Prometheus-метрики: `requests_total`, `errors_total`, `rate_limit_hits`,
+  `db_query_duration`, размер очереди исходящих.
+- Alerting при превышении порогов: error rate > 5%, очередь сообщений > 1000,
+  пул соединений с БД исчерпан.
 
 ## Окружение разработки и тестирование
 
@@ -234,3 +260,12 @@ Makefile              # test / lint / typecheck / dev / seed
 - White-label и API-доступ.
 - Кастомные прайсы для enterprise.
 - Приватные сообщения между участниками, аналитика контента (NLP-разметка текста).
+
+## Дорожная карта (nice-to-have, после MVP)
+
+1. **Bulk-синхронизация участников**: при добавлении в чат с 10 000 участников — обработка
+   батчами по 100, прогресс «Синхронизация: 5000/10000» для админа.
+2. **Export/Import конфигов**: экспорт настроек чата в JSON (backup/migration), импорт из
+   другого бота-модератора (миграция клиентов с конкурентов).
+3. **Multi-language**: i18n через gettext/Babel, языки RU/EN/TR (популярные для
+   крипто-комьюнити). В MVP — русский с архитектурой под i18n (строки изолированы от кода).
