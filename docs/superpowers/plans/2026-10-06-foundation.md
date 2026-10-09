@@ -1814,9 +1814,12 @@ from aiogram.types import Update
 from bot.config import get_settings
 from bot.db.engine import Database, create_database
 from bot.support.errors import register_error_handlers
-from bot.support.redis import create_redis
+from bot.support.redis import Redis, create_redis
 
 log = logging.getLogger(__name__)
+
+DB_KEY = web.AppKey("db", Database)
+REDIS_KEY = web.AppKey("redis", Redis)
 
 ALLOWED_UPDATES = [
     "message",
@@ -1836,8 +1839,8 @@ def setup_logging(level: str) -> None:
 
 
 async def health(request: web.Request) -> web.Response:
-    db: Database = request.app["db"]
-    redis = request.app["redis"]
+    db = request.app[DB_KEY]
+    redis = request.app[REDIS_KEY]
     db_ok = await db.ping()
     try:
         redis_ok = bool(await redis.ping())
@@ -1850,10 +1853,10 @@ async def health(request: web.Request) -> web.Response:
     )
 
 
-def build_health_app(db: Database, redis) -> web.Application:
+def build_health_app(db: Database, redis: Redis) -> web.Application:
     app = web.Application()
-    app["db"] = db
-    app["redis"] = redis
+    app[DB_KEY] = db
+    app[REDIS_KEY] = redis
     app.router.add_get("/health", health)
     return app
 
