@@ -38,7 +38,7 @@ class RecordingBot:
     async def me(self) -> User:
         return self.me_user
 
-    async def __getattr__(self, name: str):
+    def __getattr__(self, name: str):
         async def caller(*args, **kwargs):
             self.calls.append((name, args, kwargs))
             if name == "get_chat":

@@ -133,7 +133,7 @@ class RecordingBot:
     async def me(self) -> User:
         return self.me_user
 
-    async def __getattr__(self, name: str):
+    def __getattr__(self, name: str):
         async def caller(*args, **kwargs):
             self.calls.append((name, args, kwargs))
             if name == "get_chat":
@@ -881,7 +881,8 @@ async def _handle_bot_added(
     if chat.archived:
         await set_archived(session_factory, chat.id, False)
     try:
-        member_count = (await bot.get_chat(update.chat.id)).member_count or 0
+        full = await bot.get_chat(update.chat.id)
+        member_count = getattr(full, "member_count", 0) or 0
     except Exception:
         member_count = 0
     await update_member_count(session_factory, chat.id, member_count)
