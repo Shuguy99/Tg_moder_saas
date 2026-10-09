@@ -424,7 +424,7 @@ git commit -m "feat: three-level outbound rate limiting with redis-backed sessio
         "warn_limit": 3,
         "caps_threshold": 0.7,
         "caps_min_len": 8,
-        "repeat_cluster_enabled": True,     # повторное сообщение юзера за окно
+        "repeat_cluster_enabled": True,  # повторное сообщение юзера за окно
         "repeat_window_min": 5,
         "behavior": {
             "link": "delete+warn",
@@ -502,7 +502,9 @@ async def test_add_moderator_idempotent():
         await add_moderator(db.session_factory, chat.id, 42)
         await add_moderator(db.session_factory, chat.id, 42)
         async with db.session() as session:
-            count = (await session.execute(select(func.count()).select_from(Moderator))).scalar_one()
+            count = (
+                await session.execute(select(func.count()).select_from(Moderator))
+            ).scalar_one()
         assert count == 1
     finally:
         await db.dispose()
@@ -615,7 +617,9 @@ async def add_moderator(
     async with session_factory() as session:
         existing = (
             await session.execute(
-                select(Moderator.id).where(Moderator.chat_id == chat_pk, Moderator.user_id == user_id)
+                select(Moderator.id).where(
+                    Moderator.chat_id == chat_pk, Moderator.user_id == user_id
+                )
             )
         ).scalar_one_or_none()
         if existing is None:
@@ -688,7 +692,9 @@ from bot.modules.chatflow import on_chat_member, router
 from conftest import RecordingBot
 
 
-def make_update(*, chat_id: int, user_id: int, is_bot: bool, new_left: bool, old_left: bool, from_id: int) -> ChatMemberUpdated:
+def make_update(
+    *, chat_id: int, user_id: int, is_bot: bool, new_left: bool, old_left: bool, from_id: int
+) -> ChatMemberUpdated:
     user = User(id=user_id, is_bot=is_bot, first_name="Bot" if is_bot else "User")
     old = ChatMemberLeft(user=user) if old_left else ChatMemberMember(user=user)
     new = ChatMemberLeft(user=user) if new_left else ChatMemberMember(user=user)
@@ -702,7 +708,11 @@ def make_update(*, chat_id: int, user_id: int, is_bot: bool, new_left: bool, old
 
 
 def data_for(db, fake_redis, fake_limiter):
-    return {"session_factory": db.session_factory, "redis": fake_redis, "rate_limiter": fake_limiter}
+    return {
+        "session_factory": db.session_factory,
+        "redis": fake_redis,
+        "rate_limiter": fake_limiter,
+    }
 
 
 async def test_chatflow_router_exports():
@@ -716,7 +726,9 @@ async def test_bot_added_creates_chat_and_moderator(fake_redis, fake_limiter):
             await conn.run_sync(Base.metadata.create_all)
         bot = RecordingBot(me_id=1000)
         bot.member_count_by_chat[-100] = 777
-        update = make_update(chat_id=-100, user_id=1000, is_bot=True, new_left=False, old_left=True, from_id=42)
+        update = make_update(
+            chat_id=-100, user_id=1000, is_bot=True, new_left=False, old_left=True, from_id=42
+        )
         assert await on_chat_member(update, bot, data_for(db, fake_redis, fake_limiter)) is True
         async with db.session() as session:
             chat = (await session.execute(select(Chat))).scalars().all()
@@ -737,7 +749,9 @@ async def test_bot_added_restores_archived(fake_redis, fake_limiter):
         chat = await get_or_create_chat(db.session_factory, -100)
         await set_archived(db.session_factory, chat.id, True)
         bot = RecordingBot(me_id=1000)
-        update = make_update(chat_id=-100, user_id=1000, is_bot=True, new_left=False, old_left=True, from_id=42)
+        update = make_update(
+            chat_id=-100, user_id=1000, is_bot=True, new_left=False, old_left=True, from_id=42
+        )
         await on_chat_member(update, bot, data_for(db, fake_redis, fake_limiter))
         async with db.session() as session:
             fresh = (await session.execute(select(Chat).where(Chat.chat_id == -100))).scalar_one()
@@ -751,14 +765,20 @@ async def test_bot_added_abuse_limit_leaves_chat(fake_redis, fake_limiter):
     try:
         async with db.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-        from bot.support.chats import add_moderator, count_active_chats_for_moderator, get_or_create_chat
+        from bot.support.chats import (
+            add_moderator,
+            count_active_chats_for_moderator,
+            get_or_create_chat,
+        )
 
         for ext in range(10):
             chat = await get_or_create_chat(db.session_factory, -100 - ext)
             await add_moderator(db.session_factory, chat.id, 42)
         assert await count_active_chats_for_moderator(db.session_factory, 42) == 10
         bot = RecordingBot(me_id=1000)
-        update = make_update(chat_id=-555, user_id=1000, is_bot=True, new_left=False, old_left=True, from_id=42)
+        update = make_update(
+            chat_id=-555, user_id=1000, is_bot=True, new_left=False, old_left=True, from_id=42
+        )
         await on_chat_member(update, bot, data_for(db, fake_redis, fake_limiter))
         assert bot.called("leave_chat") == 1
         assert bot.calls[0][1][0] == -555
@@ -776,7 +796,9 @@ async def test_bot_removed_archives(fake_redis, fake_limiter):
         chat = await get_or_create_chat(db.session_factory, -100)
         assert chat.archived is False
         bot = RecordingBot(me_id=1000)
-        update = make_update(chat_id=-100, user_id=1000, is_bot=True, new_left=True, old_left=False, from_id=42)
+        update = make_update(
+            chat_id=-100, user_id=1000, is_bot=True, new_left=True, old_left=False, from_id=42
+        )
         await on_chat_member(update, bot, data_for(db, fake_redis, fake_limiter))
         async with db.session() as session:
             fresh = (await session.execute(select(Chat).where(Chat.chat_id == -100))).scalar_one()
@@ -1018,7 +1040,9 @@ def check_text(text: str, cfg: dict, plan: str) -> FilterType | None:
         return FilterType.STOPWORD
     if detect_links(text, whitelist):
         return FilterType.LINK
-    if detect_caps(text, threshold=cfg.get("caps_threshold", 0.7), min_len=cfg.get("caps_min_len", 8)):
+    if detect_caps(
+        text, threshold=cfg.get("caps_threshold", 0.7), min_len=cfg.get("caps_min_len", 8)
+    ):
         return FilterType.CAPS
     return None
 ```
@@ -1135,11 +1159,21 @@ async def test_ban_after_warn_limit(fake_redis):
         await setup_chat(db)
         bot = RecordingBot()
         for _ in range(3):
-            await on_message(make_message(text="спам http://spam.net"), bot, data_for(db, fake_redis))
+            await on_message(
+                make_message(text="спам http://spam.net"), bot, data_for(db, fake_redis)
+            )
         assert bot.called("ban_chat_member") == 1
         async with db.session() as session:
             rows = (await session.execute(select(MessageLog))).scalars().all()
-        assert [r.action for r in rows] == ["delete", "warn", "delete", "warn", "delete", "warn", "ban"]
+        assert [r.action for r in rows] == [
+            "delete",
+            "warn",
+            "delete",
+            "warn",
+            "delete",
+            "warn",
+            "ban",
+        ]
     finally:
         await db.dispose()
 
@@ -1194,7 +1228,10 @@ async def test_stopwords_gated_by_plan(fake_redis):
             db_chat.plan = "free"
             await session.commit()
         bot = RecordingBot()
-        assert await on_message(make_message(text="это развод друзья"), bot, data_for(db, fake_redis)) is False
+        assert (
+            await on_message(make_message(text="это развод друзья"), bot, data_for(db, fake_redis))
+            is False
+        )
         assert bot.called("delete_message") == 0
     finally:
         await db.dispose()
@@ -1229,7 +1266,9 @@ async def warn_member(
 ) -> int:
     async with session_factory() as session:
         member = (
-            await session.execute(select(Member).where(Member.chat_id == chat_pk, Member.user_id == user_id))
+            await session.execute(
+                select(Member).where(Member.chat_id == chat_pk, Member.user_id == user_id)
+            )
         ).scalar_one_or_none()
         if member is None:
             member = Member(chat_id=chat_pk, user_id=user_id)
@@ -1370,7 +1409,13 @@ SETTINGS = {
 
 async def test_greeting_sends_text(fake_limiter):
     bot = RecordingBot()
-    await on_member_joined(None, bot, fake_limiter, make_chat(settings=SETTINGS), User(id=5, is_bot=False, first_name="U"))
+    await on_member_joined(
+        None,
+        bot,
+        fake_limiter,
+        make_chat(settings=SETTINGS),
+        User(id=5, is_bot=False, first_name="U"),
+    )
     assert bot.called("send_message") == 1
     assert bot.calls[0][1][0] == -100
     assert "Добро пожаловать!" in bot.calls[0][1][1]
@@ -1378,7 +1423,13 @@ async def test_greeting_sends_text(fake_limiter):
 
 async def test_greeting_renders_buttons(fake_limiter):
     bot = RecordingBot()
-    await on_member_joined(None, bot, fake_limiter, make_chat(settings=SETTINGS), User(id=5, is_bot=False, first_name="U"))
+    await on_member_joined(
+        None,
+        bot,
+        fake_limiter,
+        make_chat(settings=SETTINGS),
+        User(id=5, is_bot=False, first_name="U"),
+    )
     _, _, kwargs = bot.calls[0]
     markup = kwargs["reply_markup"]
     assert markup.inline_keyboard[0][0].text == "Канал"
@@ -1387,13 +1438,25 @@ async def test_greeting_renders_buttons(fake_limiter):
 
 async def test_greeting_appends_branding(fake_limiter):
     bot = RecordingBot()
-    await on_member_joined(None, bot, fake_limiter, make_chat(settings=SETTINGS, show_branding=True), User(id=5, is_bot=False, first_name="U"))
+    await on_member_joined(
+        None,
+        bot,
+        fake_limiter,
+        make_chat(settings=SETTINGS, show_branding=True),
+        User(id=5, is_bot=False, first_name="U"),
+    )
     assert "@mod_bot" in bot.calls[0][1][1]
 
 
 async def test_greeting_disabled_does_nothing(fake_limiter):
     bot = RecordingBot()
-    await on_member_joined(None, bot, fake_limiter, make_chat(settings={"greeting": {"enabled": False, "text": "x", "buttons": []}}), User(id=5, is_bot=False, first_name="U"))
+    await on_member_joined(
+        None,
+        bot,
+        fake_limiter,
+        make_chat(settings={"greeting": {"enabled": False, "text": "x", "buttons": []}}),
+        User(id=5, is_bot=False, first_name="U"),
+    )
     assert bot.called("send_message") == 0
 ```
 
@@ -1507,7 +1570,9 @@ async def test_captcha_start_restricts_and_creates_challenge(fake_limiter):
             await conn.run_sync(Base.metadata.create_all)
         chat = await get_or_create_chat(db.session_factory, -100)
         bot = RecordingBot()
-        await on_member_joined(db.session_factory, bot, fake_limiter, chat, User(id=5, is_bot=False, first_name="U"))
+        await on_member_joined(
+            db.session_factory, bot, fake_limiter, chat, User(id=5, is_bot=False, first_name="U")
+        )
         assert bot.called("restrict_chat_member") == 1
         assert bot.called("send_message") == 1
         args = bot.calls[0][1]
@@ -1534,7 +1599,9 @@ async def test_captcha_disabled_does_nothing(fake_limiter):
             db_chat.settings["captcha"]["enabled"] = False
             await session.commit()
         bot = RecordingBot()
-        await on_member_joined(db.session_factory, bot, fake_limiter, chat, User(id=5, is_bot=False, first_name="U"))
+        await on_member_joined(
+            db.session_factory, bot, fake_limiter, chat, User(id=5, is_bot=False, first_name="U")
+        )
         assert bot.called("restrict_chat_member") == 0
         assert bot.called("send_message") == 0
     finally:
@@ -1548,7 +1615,12 @@ async def test_callback_done_restores_permissions():
             await conn.run_sync(Base.metadata.create_all)
         chat = await get_or_create_chat(db.session_factory, -100)
         async with db.session() as session:
-            challenge = CaptchaChallenge(chat_id=chat.id, user_id=5, status=CaptchaStatus.PENDING.value, expires_at=datetime.now(UTC))
+            challenge = CaptchaChallenge(
+                chat_id=chat.id,
+                user_id=5,
+                status=CaptchaStatus.PENDING.value,
+                expires_at=datetime.now(UTC),
+            )
             session.add(challenge)
             await session.commit()
             ch_id = challenge.id
@@ -1573,7 +1645,12 @@ async def test_callback_twice_is_idempotent():
             await conn.run_sync(Base.metadata.create_all)
         chat = await get_or_create_chat(db.session_factory, -100)
         async with db.session() as session:
-            challenge = CaptchaChallenge(chat_id=chat.id, user_id=5, status=CaptchaStatus.PENDING.value, expires_at=datetime.now(UTC))
+            challenge = CaptchaChallenge(
+                chat_id=chat.id,
+                user_id=5,
+                status=CaptchaStatus.PENDING.value,
+                expires_at=datetime.now(UTC),
+            )
             session.add(challenge)
             await session.commit()
             ch_id = challenge.id
@@ -1593,7 +1670,12 @@ async def test_callback_wrong_user_ignored():
             await conn.run_sync(Base.metadata.create_all)
         chat = await get_or_create_chat(db.session_factory, -100)
         async with db.session() as session:
-            challenge = CaptchaChallenge(chat_id=chat.id, user_id=5, status=CaptchaStatus.PENDING.value, expires_at=datetime.now(UTC))
+            challenge = CaptchaChallenge(
+                chat_id=chat.id,
+                user_id=5,
+                status=CaptchaStatus.PENDING.value,
+                expires_at=datetime.now(UTC),
+            )
             session.add(challenge)
             await session.commit()
             ch_id = challenge.id
@@ -1619,7 +1701,13 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from aiogram import Bot, Router, F
-from aiogram.types import CallbackQuery, ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup, User
+from aiogram.types import (
+    CallbackQuery,
+    ChatPermissions,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    User,
+)
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -1708,11 +1796,15 @@ async def on_callback(callback_query: CallbackQuery, bot: Bot, data: dict) -> No
         await session.commit()
         chat = (
             await session.execute(
-                select(Chat).join(CaptchaChallenge, CaptchaChallenge.chat_id == Chat.id).where(CaptchaChallenge.id == challenge_id)
+                select(Chat)
+                .join(CaptchaChallenge, CaptchaChallenge.chat_id == Chat.id)
+                .where(CaptchaChallenge.id == challenge_id)
             )
         ).scalar_one_or_none()
     if chat is not None:
-        await bot.restrict_chat_member(chat.chat_id, user_id, permissions=FULL_PERMISSIONS, until_date=0)
+        await bot.restrict_chat_member(
+            chat.chat_id, user_id, permissions=FULL_PERMISSIONS, until_date=0
+        )
     await bot.answer_callback_query(callback_query.id, text="✅", cache_time=30)
 ```
 
