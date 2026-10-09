@@ -675,32 +675,32 @@ def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-class Plan(str, enum.Enum):
+class Plan(enum.StrEnum):
     FREE = "free"
     PRO = "pro"
     ENTERPRISE = "enterprise"
 
 
-class FilterType(str, enum.Enum):
+class FilterType(enum.StrEnum):
     LINK = "link"
     CAPS = "caps"
     REPEAT = "repeat"
     STOPWORD = "stopword"
 
 
-class LogAction(str, enum.Enum):
+class LogAction(enum.StrEnum):
     DELETE = "delete"
     WARN = "warn"
     BAN = "ban"
 
 
-class CaptchaStatus(str, enum.Enum):
+class CaptchaStatus(enum.StrEnum):
     PENDING = "pending"
     DONE = "done"
     EXPIRED = "expired"
 
 
-class MemberEvent(str, enum.Enum):
+class MemberEvent(enum.StrEnum):
     JOIN = "join"
     LEAVE = "leave"
 
