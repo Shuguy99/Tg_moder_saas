@@ -63,5 +63,5 @@ async def test_health_degraded_when_redis_down():
 
 
 def test_create_dispatcher_registers_middleware():
-    dp = create_dispatcher(FakeDB(True))
+    dp = create_dispatcher(FakeDB(True), FakeRedis(True))
     assert dp is not None

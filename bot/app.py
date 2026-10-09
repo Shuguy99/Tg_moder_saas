@@ -11,8 +11,15 @@ from aiohttp import web
 
 from bot.config import get_settings
 from bot.db.engine import Database, create_database
+from bot.modules.antispam.handler import router as antispam_router
+from bot.modules.captcha.handler import on_member_joined as captcha_on_member_joined
+from bot.modules.captcha.handler import router as captcha_router
+from bot.modules.chatflow import router as chatflow_router
+from bot.modules.greeting.handler import on_member_joined as greeting_on_member_joined
 from bot.support.errors import register_error_handlers
+from bot.support.ratelimit import RateLimiter
 from bot.support.redis import Redis, create_redis
+from bot.support.sessions import create_session
 
 log = logging.getLogger(__name__)
 
@@ -59,9 +66,17 @@ def build_health_app(db: Database, redis: Redis) -> web.Application:
     return app
 
 
-def create_dispatcher(db: Database) -> Dispatcher:
+def create_dispatcher(db: Database, redis: Redis) -> Dispatcher:
     dp = Dispatcher()
+    dp["session_factory"] = db.session_factory
+    dp["redis"] = redis
+    dp["rate_limiter"] = RateLimiter(redis)
+    dp["captcha_on_member_joined"] = captcha_on_member_joined
+    dp["greeting_on_member_joined"] = greeting_on_member_joined
     register_error_handlers(dp, db.session_factory)
+    dp.include_router(chatflow_router)
+    dp.include_router(antispam_router)
+    dp.include_router(captcha_router)
     return dp
 
 
@@ -70,11 +85,14 @@ async def run() -> None:
     setup_logging(settings.log_level)
     db = create_database(settings.database_url)
     redis = create_redis(settings.redis_url)
+    rate_limiter = RateLimiter(redis)
+    session = create_session(rate_limiter)
     bot = Bot(
         token=settings.bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        session=session,
     )
-    dp = create_dispatcher(db)
+    dp = create_dispatcher(db, redis)
     runner: web.AppRunner | None = None
     try:
         if settings.mode == "polling":
