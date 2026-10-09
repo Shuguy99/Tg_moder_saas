@@ -1545,7 +1545,7 @@ from sqlalchemy import select
 
 from bot.db.base import Base
 from bot.db.engine import create_database
-from bot.models import CaptchaChallenge, CaptchaStatus, Chat as DbChat
+from bot.models import CaptchaChallenge, CaptchaStatus
 from bot.modules.captcha.handler import on_callback, on_member_joined
 from bot.support.chats import get_or_create_chat
 from conftest import RecordingBot
@@ -1595,10 +1595,7 @@ async def test_captcha_disabled_does_nothing(fake_limiter):
         async with db.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         chat = await get_or_create_chat(db.session_factory, -100)
-        async with db.session() as session:
-            db_chat = await session.get(DbChat, chat.id)
-            db_chat.settings["captcha"]["enabled"] = False
-            await session.commit()
+        chat.settings["captcha"]["enabled"] = False
         bot = RecordingBot()
         await on_member_joined(
             db.session_factory, bot, fake_limiter, chat, User(id=5, is_bot=False, first_name="U")
@@ -1700,6 +1697,7 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'bot.modules.captcha.ha
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 
 from aiogram import Bot, Router, F
 from aiogram.types import (
@@ -1709,7 +1707,7 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     User,
 )
-from sqlalchemy import select, update
+from sqlalchemy import CursorResult, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bot.models import CaptchaChallenge, CaptchaStatus, Chat
@@ -1775,21 +1773,25 @@ async def on_member_joined(
 @router.callback_query(F.data.contains("captcha:"))
 async def on_callback(callback_query: CallbackQuery, bot: Bot, data: dict) -> None:
     session_factory: async_sessionmaker[AsyncSession] = data["session_factory"]
+    data_str = callback_query.data or ""
     try:
-        challenge_id = int(callback_query.data.split(":", 1)[1])
+        challenge_id = int(data_str.split(":", 1)[1])
     except (ValueError, IndexError):
         await bot.answer_callback_query(callback_query.id)
         return
     user_id = callback_query.from_user.id
     async with session_factory() as session:
-        result = await session.execute(
-            update(CaptchaChallenge)
-            .where(
-                CaptchaChallenge.id == challenge_id,
-                CaptchaChallenge.status == CaptchaStatus.PENDING.value,
-                CaptchaChallenge.user_id == user_id,
-            )
-            .values(status=CaptchaStatus.DONE.value)
+        result = cast(
+            "CursorResult[Any]",
+            await session.execute(
+                update(CaptchaChallenge)
+                .where(
+                    CaptchaChallenge.id == challenge_id,
+                    CaptchaChallenge.status == CaptchaStatus.PENDING.value,
+                    CaptchaChallenge.user_id == user_id,
+                )
+                .values(status=CaptchaStatus.DONE.value)
+            ),
         )
         if result.rowcount == 0:
             await bot.answer_callback_query(callback_query.id, text="Вы уже прошли проверку")
