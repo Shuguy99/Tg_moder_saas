@@ -994,8 +994,8 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./ops/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - pgdata:/var/lib/postgresql/data:z
+      - ./ops/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro,z
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U bot -d botdb"]
       interval: 5s
@@ -1093,6 +1093,14 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+PARTITION_PREFIXES = ("message_logs_", "chat_member_events_")
+
+
+def include_object(object_, name, type_, reflected, compare_to):
+    if reflected and type_ in ("table", "index") and name.startswith(PARTITION_PREFIXES):
+        return False
+    return True
+
 
 def _database_url() -> str:
     url = os.environ.get("DATABASE_URL")
@@ -1110,13 +1118,19 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        include_object=include_object,
     )
     with context.begin_transaction():
         context.run_migrations()
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=True,
+        include_object=include_object,
+    )
     with context.begin_transaction():
         context.run_migrations()
 
@@ -1953,3 +1967,5 @@ git commit -m "feat: application entrypoint with health endpoint"
 
 - Скачивание образов `postgres:16-alpine`/`redis:7-alpine` через docker.io в этой сети может быть медленным; образы тянутся заранее (`podman pull docker.io/library/postgres:16-alpine`) до `make up`.
 - `alembic check` в интеграционном тесте — единственный строгий гарант совпадения DDL и моделей; при drift исправлять DDL (модели — источник истины).
+- Дочерние партиции (`message_logs_YYYY_MM`, `chat_member_events_YYYY_MM`) и их автоиндексы существуют только в БД — `env.py` отфильтровывает их через `include_object`, иначе `alembic check` всегда видит «удалённые» таблицы.
+- На Fedora с SELinux (Enforcing) bind-mount `ops/postgres/init.sql` требует метки `:z` в compose, иначе контейнер postgres падает с `Permission denied`.
