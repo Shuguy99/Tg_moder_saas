@@ -891,7 +891,7 @@ async def _handle_bot_added(
 - [ ] **Step 4: Убедиться, что тесты зелёные**
 
 Run: `make test`
-Expected: 44 passed (40 + 4 новых), 1 deselected.
+Expected: 45 passed (40 + 5 новых), 1 deselected.
 
 - [ ] **Step 5: Линт, типы, формат, коммит**
 
@@ -1051,7 +1051,7 @@ def check_text(text: str, cfg: dict, plan: str) -> FilterType | None:
 - [ ] **Step 4: Убедиться, что тесты зелёные**
 
 Run: `make test`
-Expected: 56 passed (44 + 12 новых), 1 deselected.
+Expected: 57 passed (45 + 12 новых), 1 deselected.
 
 - [ ] **Step 5: Линт, типы, коммит**
 
@@ -1362,7 +1362,7 @@ async def on_message(message: Message, bot: Bot, data: dict) -> bool | None:
 - [ ] **Step 4: Убедиться, что тесты зелёные**
 
 Run: `make test`
-Expected: 62 passed (56 + 6 новых), 1 deselected.
+Expected: 63 passed (57 + 6 новых), 1 deselected.
 
 - [ ] **Step 5: Линт, типы, код-стиль, коммит**
 
@@ -1510,7 +1510,7 @@ async def on_member_joined(
 - [ ] **Step 4: Убедиться, что тесты зелёные**
 
 Run: `make test`
-Expected: 66 passed (62 + 4 новых), 1 deselected.
+Expected: 67 passed (63 + 4 новых), 1 deselected.
 
 - [ ] **Step 5: Линт, типы, коммит**
 
@@ -1814,7 +1814,7 @@ async def on_callback(callback_query: CallbackQuery, bot: Bot, data: dict) -> No
 - [ ] **Step 4: Убедиться, что тесты зелёные**
 
 Run: `make test`
-Expected: 71 passed (66 + 5 новых), 1 deselected.
+Expected: 72 passed (67 + 5 новых), 1 deselected.
 
 - [ ] **Step 5: Линт, типы, коммит**
 
@@ -1946,10 +1946,10 @@ async def run() -> None:
 - [ ] **Step 4: Убедиться, что все тесты зелёные**
 
 Run: `make test`
-Expected: **71 passed**, 1 deselected.
+Expected: **72 passed**, 1 deselected.
 
 Run: `make test-integration` (миграции и БД не менялись — должно остаться зелёным)
-Expected: 1 passed, 71 deselected.
+Expected: 1 passed, 72 deselected.
 
 - [ ] **Step 5: Линт, типы, коммит**
 
@@ -1983,4 +1983,4 @@ REDIS_URL='redis://localhost:6379/0' HEALTH_PORT=8080 .venv/bin/python -m bot.ap
 - **Спека:** раздел «Онбординг чата» → Task 3 (abuse-limit 10, `member_count`, archived/restore); «Анти-спам» (4 фильтра, `delete`/`delete+warn`, warn_limit/бан, pro-гейт) → Tasks 4–5; «Приветствие» (текст, кнопки-ссылки, брендинг) → Task 6; «Капча» (restrict с явными permissions, кнопка, атомарная идемпотентность `status=pending`→`done`) → Task 7; «Rate limits / Flood control» (3 уровня, очередь/ожидание вместо пачки, `retry_after`) → Task 1; «Redis» (эфемерность, дедуп) → Tasks 1, 5; «Модели БД» (FK на `chats.id` vs внешний `chat_id`) → везде.
 - **Таймауты капчи** и входящий троттлинг хендлеров — сознательно в Плане 3 (worker), как и в декомпозиции Плана 1.
 - **Типы/имена** перепроверены по фактическим сигнатурам aiogram 3.31 (`BaseRequestMiddleware.__call__(make_request, bot, method)`, `TelegramRetryAfter(method, message, retry_after)`, `Bot.me()`, `ChatMemberUpdated(chat, from_user, date, old_chat_member, new_chat_member)`, `ChatMemberMember(user=...)`).
-- **Счётчики:** 24 → 33 → 40 → 44 → 56 → 62 → 66 → 71 (unit), integration остаётся 1.
+- **Счётчики:** 24 → 33 → 40 → 45 → 57 → 63 → 67 → 72 (unit), integration остаётся 1.
